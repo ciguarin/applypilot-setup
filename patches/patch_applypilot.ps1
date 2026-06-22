@@ -19,7 +19,8 @@ Write-Host "Patching: $dst"
     "scoring\tailor.py",
     "scoring\pdf.py",
     "cli.py",
-    "apply\prompt.py"
+    "apply\prompt.py",
+    "apply\launcher.py"
 ) | ForEach-Object {
     Copy-Item -Force (Join-Path $src $_) (Join-Path $dst $_)
     Write-Host "Patched: $_"

@@ -382,7 +382,11 @@ Cover Letter PDF: {cl_upload_path or 'N/A'}
    5c. Regular login: {personal['email']} / {personal.get('password', '')}
    5d. After Login click: run CAPTCHA DETECT.
    5e. Login failed? Try sign up with same email and password.
-   5f. Need email verification? Use search_emails + read_email to get the code.
+   5f. Email required? Wait 8s then search_emails for mail from the site's domain.
+       - OTP/code field visible: extract the numeric code, type it into the field.
+       - Verification link (no code field): get the link from the email, browser_navigate to it, continue.
+       - Password reset email: get reset link, navigate to it, set password to {personal.get('password', '')}, return to login, retry 5c.
+       - No email after 20s (search twice with 10s gap): RESULT:FAILED:login_issue
    5g. Switch back to application tab if needed.
    5h. All failed -> RESULT:FAILED:login_issue.
 6. Upload resume: delete existing first, browser_file_upload with PDF path. Always upload fresh.
