@@ -87,6 +87,7 @@ def _make_mcp_config(cdp_port: int) -> dict:
             "env": {
                 "MCP_EMAIL_ADDRESS": email_addr,
                 "MCP_EMAIL_PASSWORD": email_pass,
+                "MCP_EMAIL_READ_ONLY": "true",
             },
         }
     return mcp
@@ -338,11 +339,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         "--mcp-config", str(mcp_config_path),
         "--permission-mode", "bypassPermissions",
         "--no-session-persistence",
-        "--disallowedTools", (
-            "mcp__email__send_email,mcp__email__delete_email,"
-            "mcp__email__move_email,mcp__email__modify_email,"
-            "mcp__email__mark_read,mcp__email__mark_unread"
-        ),
+        "--disallowedTools", "Bash,computer",
         "--output-format", "stream-json",
         "--verbose", "-",
     ]
