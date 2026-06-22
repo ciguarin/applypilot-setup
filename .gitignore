@@ -1,0 +1,27 @@
+# Personal data — never commit
+.env
+profile.json
+resume.txt
+resume.pdf
+
+# Runtime data
+*.db
+logs/
+tailored_resumes/
+cover_letters/
+chrome-workers/
+apply-workers/
+past-resumes/
+dashboard.html
+employers.yaml
+employers.yaml.bak
+manual_apply.md
+
+# n8n
+.n8n/
+
+# Generated MCP configs
+.mcp-apply-*.json
+
+# macOS
+.DS_Store

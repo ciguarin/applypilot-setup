@@ -1,0 +1,139 @@
+{
+  "name": "ApplyPilot GitHub Ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "cronExpression", "expression": "0 */2 * * *" }]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-224, 0],
+      "id": "0a47e772-b5db-44f9-b06e-5caaa4ac352e",
+      "name": "Every 2h"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 288],
+      "id": "82bf66db-20f6-4d74-b7f7-f8ef58c6e0b5",
+      "name": "Manual Test"
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/negarprh/Canadian-Tech-Internships-2026/refs/heads/main/README.md",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [224, 48],
+      "id": "c1c09993-ef10-42de-b5ac-bf78dda1b9c0",
+      "name": "Fetch Canadian Tech"
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/hanzili/canada_sde_intern_position/main/README.md",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [224, 240],
+      "id": "88a2a528-5c52-4ce0-991f-679bcc662397",
+      "name": "Fetch Hanzili"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.data;\n\nconst EXCLUDED_TITLE = [\n  'senior', 'staff', 'lead', 'principal', 'director',\n  'phd', 'ph.d', 'mba', 'manager', '🎓', 'head of'\n];\n\nconst EXCLUDED_HARDWARE = [\n  'hardware', 'firmware', 'embedded', 'fpga', 'asic',\n  'pcb', 'mechanical', 'electrical', 'vlsi', 'vhdl', 'verilog',\n  'design methodology', 'design verification', 'design emulation', 'design validation'\n];\n\nconst extractUrl = (cell) => {\n  const matches = [...cell.matchAll(/\\(https?:\\/\\/[^)]+\\)/g)];\n  if (!matches.length) return null;\n  const last = matches[matches.length - 1][0];\n  return last.slice(1, -1);\n};\n\nconst isClosed = (cell) =>\n  cell.includes('🔒') || cell.toLowerCase().includes('closed');\n\nconst locationOk = (loc) => {\n  const l = loc.toLowerCase();\n  return l.includes('toronto') || l.includes('remote');\n};\n\nconst titleOk = (role) => {\n  const r = role.toLowerCase();\n  return !EXCLUDED_TITLE.some(kw => r.includes(kw)) &&\n         !EXCLUDED_HARDWARE.some(kw => r.includes(kw));\n};\n\nconst jobs = [];\nlet headers = [];\nlet inTable = false;\nlet lastCompany = '';\n\nfor (const rawLine of raw.split('\\n')) {\n  const line = rawLine.trim();\n  if (!line.startsWith('|')) { inTable = false; continue; }\n  const cells = line.split('|').slice(1, -1).map(c => c.trim());\n  if (!cells.length) continue;\n  if (cells[0].toLowerCase().includes('company')) {\n    headers = cells.map(c => c.toLowerCase().replace(/[^a-z]/g, ''));\n    inTable = true;\n    continue;\n  }\n  if (cells.every(c => /^[-: ]+$/.test(c))) continue;\n  if (!inTable || cells.length < 4) continue;\n  const row = {};\n  headers.forEach((h, i) => { if (i < cells.length) row[h] = cells[i]; });\n  let company = row['company'] ?? '';\n  if (company === '↳' || company === '') {\n    company = lastCompany;\n  } else {\n    lastCompany = company;\n  }\n  const role = row['role'] ?? '';\n  const location = row['location'] ?? '';\n  const applyCell = row['apply'] ?? '';\n  if (isClosed(applyCell)) continue;\n  const url = extractUrl(applyCell);\n  if (!url) continue;\n  if (url.includes('linkedin.com')) continue;\n  if (!locationOk(location)) continue;\n  if (!titleOk(role)) continue;\n  jobs.push({ json: { url, title: `${role} — ${company}`, salary: null, description: null, location } });\n}\n\nreturn jobs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [448, 48],
+      "id": "9607c97b-f0cd-4c24-b1c6-8396aaa192a8",
+      "name": "Parse Canadian Tech"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.data;\n\nconst EXCLUDED_TITLE = ['senior','staff','lead','principal','director','phd','ph.d','mba','manager','head of'];\nconst SKIP_CATEGORIES = ['hardware / firmware', 'hardware/firmware'];\n\nconst extractUrl = (cell) => {\n  const match = cell.match(/\\(<?(https?:\\/\\/[^>)]+)>?\\)/);\n  return match ? match[1] : null;\n};\n\nconst locationOk = (loc) => {\n  const l = loc.toLowerCase();\n  return l.includes('toronto') || l.includes('remote');\n};\n\nconst titleOk = (title) => {\n  const t = title.toLowerCase();\n  return !EXCLUDED_TITLE.some(kw => t.includes(kw));\n};\n\nconst cleanTitle = (title) => title.replace(/<!--[^>]+-->/g,'').replace(/[🔥💤🆕]/gu,'').replace(/^[\\s\\W]+/,'').trim();\nconst stripWorkType = (loc) => loc.replace(/\\s*\\([^)]+\\)\\s*$/,'').trim();\n\nconst jobs = [];\nlet headers = [], inTable = false, skipCategory = false;\n\nfor (const rawLine of raw.split('\\n')) {\n  const line = rawLine.trim();\n  if (line.startsWith('## ')) {\n    const cat = line.replace(/^##\\s*/,'').toLowerCase();\n    skipCategory = SKIP_CATEGORIES.some(c => cat.includes(c));\n    inTable = false; continue;\n  }\n  if (skipCategory) continue;\n  if (!line.startsWith('|')) { inTable = false; continue; }\n  const cells = line.split('|').slice(1,-1).map(c => c.trim());\n  if (!cells.length) continue;\n  if (cells[0].toLowerCase().includes('title')) {\n    headers = cells.map(c => c.toLowerCase().replace(/[^a-z]/g,''));\n    inTable = true; continue;\n  }\n  if (cells.every(c => /^[-:|\\s]+$/.test(c))) continue;\n  if (!inTable || cells.length < 4) continue;\n  const row = {};\n  headers.forEach((h,i) => { if (i < cells.length) row[h] = cells[i]; });\n  const rawTitle = row['title'] || '';\n  const title = cleanTitle(rawTitle);\n  const company = (row['company'] || '').trim();\n  const rawLocation = row['location'] || '';\n  const location = stripWorkType(rawLocation);\n  const applyCell = row['apply'] || '';\n  const url = extractUrl(applyCell);\n  if (!url) continue;\n  if (url.includes('linkedin.com')) continue;\n  if (!locationOk(rawLocation)) continue;\n  if (!titleOk(title)) continue;\n  if (!title || !company) continue;\n  jobs.push({ json: { url, title: `${title} — ${company}`, salary: null, description: null, location } });\n}\n\nreturn jobs;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [448, 240],
+      "id": "e57cc92e-2a40-4554-b21f-1fc0a23a291c",
+      "name": "Parse Hanzili"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [672, 144],
+      "id": "d726e623-7d39-42cc-a8f5-effe831cbcaa",
+      "name": "Merge Sources"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst items = $input.all();\nconst jobs = items.map(i => i.json);\nfs.writeFileSync('/tmp/n8n_jobs.json', JSON.stringify(jobs));\nreturn [{ json: { count: jobs.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [896, 144],
+      "id": "f0f559cb-aecf-4c84-84c9-80c779aee4b2",
+      "name": "Write Temp File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst https = require('https');\n\nconst shaFile = '/tmp/n8n_readme_shas.json';\nconst repos = [\n  { key: 'canadian', url: 'https://api.github.com/repos/negarprh/Canadian-Tech-Internships-2026/commits?path=README.md&per_page=1' },\n  { key: 'hanzili',  url: 'https://api.github.com/repos/hanzili/canada_sde_intern_position/commits?path=README.md&per_page=1' }\n];\n\nlet stored = {};\ntry { stored = JSON.parse(fs.readFileSync(shaFile, 'utf8')); } catch {}\n\nconst fetchSHA = (url) => new Promise((resolve, reject) => {\n  const options = { headers: { 'User-Agent': 'n8n-applypilot/1.0', 'Accept': 'application/vnd.github.v3+json' } };\n  https.get(url, options, (res) => {\n    let data = '';\n    res.on('data', d => data += d);\n    res.on('end', () => {\n      try {\n        const parsed = JSON.parse(data);\n        resolve(Array.isArray(parsed) && parsed.length ? parsed[0].sha : null);\n      } catch { reject(new Error('GitHub API parse error')); }\n    });\n  }).on('error', reject);\n});\n\nconst results = await Promise.all(repos.map(r => fetchSHA(r.url)));\nconst current = {};\nrepos.forEach((r, i) => { current[r.key] = results[i]; });\n\nconst changed = repos.some(r => current[r.key] !== stored[r.key]);\nif (!changed) {\n  console.log('No README changes, skipping.');\n  return [];\n}\n\nfs.writeFileSync(shaFile, JSON.stringify(current));\nreturn [{ json: { shas: current } }];"
+      },
+      "id": "60a75cbb-9e80-45e0-b7f6-e10516a0c0f3",
+      "name": "Check SHA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "id": "b54ddebb-ca00-400f-ae7f-426b2e025837",
+      "name": "Prune Removed",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1120, 144],
+      "parameters": {
+        "command": "python3 << 'PYEOF'\nimport sqlite3, json, os\ncurrent = json.loads(open('/tmp/n8n_jobs.json').read())\ncurrent_urls = set(j['url'] for j in current)\ndb = sqlite3.connect(os.path.expanduser('~/.applypilot/applypilot.db'))\ndb.execute('PRAGMA journal_mode=WAL')\nrows = db.execute(\"SELECT url FROM jobs WHERE strategy='github_readme' AND (apply_status IS NULL OR apply_status='failed')\").fetchall()\nstale = [r[0] for r in rows if r[0] not in current_urls]\nif stale:\n    ph = ','.join('?' * len(stale))\n    deleted = db.execute(f'DELETE FROM jobs WHERE url IN ({ph})', stale).rowcount\n    db.commit()\n    print(f'Pruned {deleted} removed listings')\nelse:\n    print('Nothing to prune')\ndb.close()\nPYEOF"
+      }
+    },
+    {
+      "id": "7364f361-78a6-4304-956c-6e63cd8467bd",
+      "name": "Insert into DB",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1344, 144],
+      "parameters": {
+        "command": "python3 << 'PYEOF'\nimport sqlite3, json, os\nfrom datetime import datetime, timezone\njobs = json.loads(open('/tmp/n8n_jobs.json').read())\ndb = sqlite3.connect(os.path.expanduser('~/.applypilot/applypilot.db'))\ndb.execute('PRAGMA journal_mode=WAL')\nc = 0\nfor j in jobs:\n    r = db.execute('INSERT OR IGNORE INTO jobs (url,title,salary,description,location,site,strategy,discovered_at) VALUES (?,?,?,?,?,?,?,?)',\n        (j['url'],j['title'],None,None,j.get('location'),j.get('site','CanadianTechInternships'),'github_readme',datetime.now(timezone.utc).isoformat()))\n    c += r.rowcount\ndb.commit()\ndb.close()\nprint(f'Inserted {c}')\nPYEOF"
+      }
+    },
+    {
+      "id": "176b6c63-c4ce-45d2-945c-6433311a08f3",
+      "name": "Run ApplyPilot",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [1568, 144],
+      "parameters": {
+        "command": "nohup \"$HOME/.applypilot/run_pipeline.sh\" > /tmp/applypilot_run.log 2>&1 &"
+      }
+    }
+  ],
+  "connections": {
+    "Manual Test": { "main": [[{ "node": "Fetch Canadian Tech", "type": "main", "index": 0 }, { "node": "Fetch Hanzili", "type": "main", "index": 0 }]] },
+    "Every 2h":    { "main": [[{ "node": "Check SHA", "type": "main", "index": 0 }]] },
+    "Check SHA":   { "main": [[{ "node": "Fetch Canadian Tech", "type": "main", "index": 0 }, { "node": "Fetch Hanzili", "type": "main", "index": 0 }]] },
+    "Fetch Canadian Tech": { "main": [[{ "node": "Parse Canadian Tech", "type": "main", "index": 0 }]] },
+    "Fetch Hanzili":       { "main": [[{ "node": "Parse Hanzili", "type": "main", "index": 1 }]] },
+    "Parse Canadian Tech": { "main": [[{ "node": "Merge Sources", "type": "main", "index": 0 }]] },
+    "Parse Hanzili":       { "main": [[{ "node": "Merge Sources", "type": "main", "index": 1 }]] },
+    "Merge Sources":  { "main": [[{ "node": "Write Temp File", "type": "main", "index": 0 }]] },
+    "Write Temp File": { "main": [[{ "node": "Prune Removed", "type": "main", "index": 0 }]] },
+    "Prune Removed":  { "main": [[{ "node": "Insert into DB", "type": "main", "index": 0 }]] },
+    "Insert into DB": { "main": [[{ "node": "Run ApplyPilot", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}
