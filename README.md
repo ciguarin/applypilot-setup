@@ -10,14 +10,30 @@ This repo handles everything that's missing from the upstream package: install s
 
 [ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot) is a genuinely impressive project — a full autonomous job application pipeline that handles everything from discovery to form submission. Credit where it's due.
 
-That said, its discovery stage pulls listings from hardcoded company career page directories. Those directories aren't tailored to any specific region or hiring season, which makes the raw upstream less useful if you're hunting for Canadian internships specifically.
+This repo exists because upstream has a few gaps that matter a lot in practice, particularly for Canadian internship seekers.
 
-This setup swaps in two of the most actively maintained and comprehensive Canadian internship repositories as the discovery source:
+### Discovery source
 
-- **[Canadian Tech Internships](https://github.com/Canadian-Tech-Internships/Canadian-Tech-Internships-Summer-2025)** — community-curated list of Canadian tech internship postings, updated frequently throughout hiring cycles
+Upstream's discovery stage pulls from hardcoded company career page directories — useful for general job hunting, but not calibrated to any specific region or hiring season. This setup replaces that with two of the most actively maintained and comprehensive Canadian internship repositories:
+
+- **[Canadian Tech Internships](https://github.com/Canadian-Tech-Internships/Canadian-Tech-Internships-Summer-2025)** — community-curated list of Canadian tech internship postings, updated continuously throughout hiring cycles
 - **[Hanzili](https://github.com/hanzili/cs-internship-canada)** — focused CS internship tracker for Canada with strong coverage of co-op and fall/winter terms
 
-The n8n workflow in this repo polls both on a 2-hour schedule, deduplicates against your local DB, and feeds new listings directly into the pipeline. The result is a discovery layer that's actually calibrated to the Canadian internship market rather than a generic global directory.
+An n8n workflow polls both repos on a 2-hour schedule, deduplicates against your local DB, prunes closed listings, and feeds new ones directly into the pipeline. The result is discovery that's actually calibrated to the Canadian market rather than a generic global directory.
+
+### Apply agent overrides
+
+The apply stage (`launcher.py` + `prompt.py`) is where most of the real work happened:
+
+- **Email MCP for OTP/verification** — upstream has no handling for sites that send a verification code or magic link before showing the application form. This adds an iCloud IMAP integration via `@codefuturist/email-mcp` so the agent can retrieve OTP codes and password reset links mid-session without human intervention.
+
+- **Prompt rewrite** — the upstream agent prompt is verbose and general-purpose. This version is stripped down and made prescriptive: explicit dropdown handling (open → read all options → fuzzy match → click, never type verbatim), forgot-password flow before sign-up fallback, React/SPA input event dispatch for Ashby/Greenhouse forms that don't register `browser_type` events, and hard rules around education fields (never cancel mid-fill, never submit without one).
+
+- **Worker-local file paths** — Playwright MCP sandboxes file access to the worker's own directory. Upstream passes resume paths from a shared `current/` folder that the MCP can't reach. This copies resume and cover letter PDFs into each worker's directory before spawning Claude.
+
+- **Token efficiency** — upstream defaults encourage long, expensive sessions. This sets `--limit 15 --max-turns 30` and runs the apply daemon every 12 hours instead of more frequently, reducing baseline token consumption significantly.
+
+- **Live log streaming** — upstream buffers worker log writes until the session ends, making real-time debugging impossible. This opens the log file with `buffering=1` so `tail -f` works during active sessions.
 
 ---
 
