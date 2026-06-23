@@ -6,6 +6,21 @@ This repo handles everything that's missing from the upstream package: install s
 
 ---
 
+## Why this exists
+
+[ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot) is a genuinely impressive project — a full autonomous job application pipeline that handles everything from discovery to form submission. Credit where it's due.
+
+That said, its discovery stage pulls listings from hardcoded company career page directories. Those directories aren't tailored to any specific region or hiring season, which makes the raw upstream less useful if you're hunting for Canadian internships specifically.
+
+This setup swaps in two of the most actively maintained and comprehensive Canadian internship repositories as the discovery source:
+
+- **[Canadian Tech Internships](https://github.com/Canadian-Tech-Internships/Canadian-Tech-Internships-Summer-2025)** — community-curated list of Canadian tech internship postings, updated frequently throughout hiring cycles
+- **[Hanzili](https://github.com/hanzili/cs-internship-canada)** — focused CS internship tracker for Canada with strong coverage of co-op and fall/winter terms
+
+The n8n workflow in this repo polls both on a 2-hour schedule, deduplicates against your local DB, and feeds new listings directly into the pipeline. The result is a discovery layer that's actually calibrated to the Canadian internship market rather than a generic global directory.
+
+---
+
 ## What it does
 
 1. **Discovers** internship listings from GitHub-curated repos (Canadian Tech Internships, Hanzili) via an n8n workflow running every 2 hours
