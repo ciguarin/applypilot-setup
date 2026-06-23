@@ -368,7 +368,7 @@ def _setup_personal(profile: dict) -> None:
         "city":           Prompt.ask("City"),
         "province_state": Prompt.ask("Province/State (e.g. Ontario)", default=""),
         "country":        Prompt.ask("Country (e.g. Canada)", default="Canada"),
-        "postal_code":    Prompt.ask("Postal/ZIP code (no spaces, e.g. M1P4V4)", default=""),
+        "postal_code":    Prompt.ask("Postal/ZIP code (no spaces, e.g. M5V0A1)", default=""),
         "address":        Prompt.ask("Street address (optional)", default=""),
         "linkedin_url":   Prompt.ask("LinkedIn URL", default=""),
         "github_url":     Prompt.ask("GitHub URL (optional)", default=""),
@@ -644,6 +644,51 @@ def _setup_env(profile: dict) -> None:
 # Main entry
 # ---------------------------------------------------------------------------
 
+def _review_summary(profile: dict) -> str:
+    """Return a multi-line string summarising what's been collected so far."""
+    p = profile.get("personal", {})
+    edu = (profile.get("education") or [{}])[0]
+    exp = profile.get("experience", {})
+    sb  = profile.get("skills_boundary", {})
+    all_skills = (
+        sb.get("programming_languages", [])
+        + sb.get("frameworks", [])
+        + sb.get("tools", [])
+    )
+
+    resume_status = "✓ " + RESUME_PATH.name if RESUME_PATH.exists() else "✗ not set"
+    if RESUME_PDF_PATH.exists() and not RESUME_PATH.exists():
+        resume_status = "✓ " + RESUME_PDF_PATH.name + " (PDF only)"
+
+    env_text = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else ""
+    if "GEMINI_API_KEY" in env_text:
+        llm_status = "Gemini"
+    elif "OPENAI_API_KEY" in env_text:
+        llm_status = "OpenAI"
+    elif "LLM_URL" in env_text:
+        llm_status = "OpenRouter/local"
+    else:
+        llm_status = "✗ not set"
+    email_status = "✓ set" if "EMAIL_ADDRESS" in env_text else "✗ not set"
+    browser_status = "✓ set" if "CHROME_PATH" in env_text else "✗ not set"
+
+    searches_status = "✓ set" if SEARCH_CONFIG_PATH.exists() else "✗ not set"
+
+    lines = [
+        f"  [bold]1. Resume    [/bold] {resume_status}",
+        f"  [bold]2. Personal  [/bold] {p.get('full_name', '—')}  {p.get('email', '')}",
+        f"  [bold]3. Education [/bold] {edu.get('degree', '—')}, {edu.get('institution', '—')}, GPA {edu.get('gpa', '—')}",
+        f"  [bold]4. Profile   [/bold] {exp.get('target_role', '—')}, {len(all_skills)} skills",
+        f"  [bold]5. Searches  [/bold] {searches_status}",
+        f"  [bold]6. API/Email [/bold] LLM: {llm_status}  Email: {email_status}  Browser: {browser_status}",
+    ]
+    return "\n".join(lines)
+
+
+def _save_profile(profile: dict) -> None:
+    PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def run_wizard() -> None:
     console.print()
     console.print(
@@ -661,36 +706,54 @@ def run_wizard() -> None:
 
     template = _load_template()
     profile: dict = {}
-
     for key in ("tailoring_instructions", "eeo_voluntary"):
         if key in template:
             profile[key] = template[key]
 
-    _setup_resume()
-    console.print()
+    def run_section(n: int) -> None:
+        console.print()
+        if n == 1:
+            _setup_resume()
+        elif n == 2:
+            _setup_personal(profile)
+        elif n == 3:
+            _setup_education(profile)
+            _setup_work_auth(profile)
+            _setup_compensation(profile)
+            _setup_experience(profile)
+            _setup_skills(profile)
+            _setup_resume_facts(profile, template)
+            _setup_availability(profile)
+        elif n == 4:
+            _setup_searches()
+        elif n == 5:
+            _setup_env(profile)
+        _save_profile(profile)
 
-    _setup_personal(profile)
-    console.print()
+    # Run all sections once
+    for i in range(1, 6):
+        run_section(i)
 
-    _setup_education(profile)
-    _setup_work_auth(profile)
-    _setup_compensation(profile)
-    _setup_experience(profile)
-    _setup_skills(profile)
-    _setup_resume_facts(profile, template)
-    _setup_availability(profile)
-    console.print()
-
-    PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
-    console.print(f"[green]Profile saved to {PROFILE_PATH}[/green]\n")
-
-    _setup_searches()
-    console.print()
-
-    _setup_env(profile)
-    # Re-save profile with password now populated
-    PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
-    console.print()
+    # Review loop — redo any section without restarting
+    while True:
+        console.print()
+        console.print(
+            Panel.fit(
+                "[bold]Review[/bold]\n\n"
+                + _review_summary(profile)
+                + "\n\n[dim]Enter a number (1-6) to redo that section, or press Enter to finish.[/dim]",
+                border_style="cyan",
+            )
+        )
+        choice = Prompt.ask("Redo section [1-6] or finish", default="").strip()
+        if not choice:
+            break
+        if choice.isdigit() and 1 <= int(choice) <= 5:
+            run_section(int(choice))
+        elif choice == "6":
+            run_section(5)  # section 6 in display = env (index 5)
+        else:
+            console.print("[yellow]Enter a number 1–6 or press Enter.[/yellow]")
 
     from applypilot.config import get_tier, TIER_LABELS, TIER_COMMANDS
     tier = get_tier()
