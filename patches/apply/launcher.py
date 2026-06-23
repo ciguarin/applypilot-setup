@@ -324,7 +324,8 @@ def run_job(job: dict, port: int, worker_id: int = 0,
     if txt_path and txt_path.exists():
         resume_text = txt_path.read_text(encoding="utf-8")
 
-    # Build the prompt
+    # Build the prompt (inject worker_id so prompt can use worker-local file paths)
+    job["_worker_id"] = worker_id
     agent_prompt = prompt_mod.build_prompt(
         job=job,
         tailored_resume=resume_text,
@@ -343,7 +344,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         "--mcp-config", str(mcp_config_path),
         "--permission-mode", "bypassPermissions",
         "--no-session-persistence",
-        "--disallowedTools", "Bash,computer",
+        "--disallowedTools", "Bash,ToolSearch,mcp__email__list_accounts",
         "--output-format", "stream-json",
         "--verbose", "-",
     ]
@@ -353,6 +354,16 @@ def run_job(job: dict, port: int, worker_id: int = 0,
     env.pop("CLAUDE_CODE_ENTRYPOINT", None)
 
     worker_dir = reset_worker_dir(worker_id)
+
+    # Copy resume/cover letter into worker dir so Playwright MCP can access them
+    import shutil as _shutil
+    for file_key in ("tailored_resume_path", "cover_letter_path"):
+        src = job.get(file_key, "")
+        if src:
+            for ext in (".pdf", ".txt"):
+                p = Path(src).with_suffix(ext)
+                if p.exists():
+                    _shutil.copy(str(p), str(worker_dir / p.name))
 
     update_state(worker_id, status="applying", job_title=job["title"],
                  company=job.get("site", ""), score=job.get("fit_score", 0),
@@ -392,7 +403,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         proc.stdin.close()
 
         text_parts: list[str] = []
-        with open(worker_log, "a", encoding="utf-8") as lf:
+        with open(worker_log, "a", encoding="utf-8", buffering=1) as lf:
             lf.write(log_header)
 
             for line in proc.stdout:

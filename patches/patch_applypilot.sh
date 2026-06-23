@@ -5,7 +5,7 @@
 set -e
 
 SRC="$HOME/.applypilot/patches"
-DST="$(python3 -c 'import applypilot, os; print(os.path.dirname(applypilot.__file__))')"
+DST="$(/Users/ian/.local/share/uv/tools/applypilot/bin/python -c 'import applypilot, os; print(os.path.dirname(applypilot.__file__))')"
 
 echo "Patching: $DST"
 

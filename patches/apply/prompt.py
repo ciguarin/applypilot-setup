@@ -54,7 +54,20 @@ def _build_profile_summary(profile: dict) -> str:
 
     if exp.get("years_of_experience_total"):
         lines.append(f"Years Experience: {exp['years_of_experience_total']}")
-    if exp.get("education_level"):
+
+    edu_list = p.get("education", [])
+    if edu_list:
+        edu = edu_list[0]
+        status = " (In Progress)" if edu.get("in_progress") else f", Graduated {edu.get('end_year', '')}"
+        lines.append(
+            f"Education: {edu['degree']} in {edu['field_of_study']}, "
+            f"{edu['institution']}, {edu.get('start_year', '')}–{edu.get('end_year', '')}{status}"
+        )
+        if edu.get("gpa"):
+            lines.append(f"GPA: {edu['gpa']}")
+        if edu.get("in_progress") and edu.get("end_year"):
+            lines.append(f"Projected Completion: April {edu['end_year']} (use Month=April, Year={edu['end_year']} for date pickers)")
+    elif exp.get("education_level"):
         lines.append(f"Education: {exp['education_level']}")
 
     lines.append(f"Available: {avail.get('earliest_start_date', 'Immediately')}")
@@ -147,9 +160,11 @@ def _build_hard_rules(profile: dict) -> str:
     work_auth = profile["work_authorization"]
 
     full_name = personal["full_name"]
-    preferred_name = personal.get("preferred_name", full_name.split()[0])
-    preferred_last = full_name.split()[-1] if " " in full_name else ""
-    display_name = f"{preferred_name} {preferred_last}".strip() if preferred_last else preferred_name
+    first_name = personal.get("first_name", full_name.rsplit(" ", 1)[0])
+    last_name = personal.get("last_name", full_name.rsplit(" ", 1)[-1])
+    middle_name = personal.get("middle_name", "")
+    preferred_name = personal.get("preferred_name", first_name.split()[0])
+    display_name = f"{preferred_name} {last_name}".strip()
 
     work_auth_rule = "Work auth: Answer truthfully from profile."
     permit_type = work_auth.get("work_permit_type", "")
@@ -157,9 +172,13 @@ def _build_hard_rules(profile: dict) -> str:
     if permit_type:
         work_auth_rule = f"Work auth: {permit_type}. Sponsorship needed: {sponsorship}."
 
-    name_rule = f'Name: Legal name = {full_name}.'
-    if preferred_name and preferred_name != full_name.split()[0]:
-        name_rule += f' Preferred = {preferred_name}. Use "{display_name}" unless field says "legal name".'
+    middle_rule = f' Middle name = {middle_name} (only enter if field explicitly asks; do NOT use as first name).' if middle_name else ""
+    name_rule = (
+        f'Name fields: First = "{first_name}", Last = "{last_name}".{middle_rule}'
+        f' Preferred/goes-by = "{preferred_name}" — use this when the form asks for preferred name.'
+        f' If the form only has one "Full Name" field, enter "{full_name}".'
+        f' NEVER put "{middle_name or preferred_name}" in the First Name field alone.'
+    )
 
     return f"""== HARD RULES ==
 1. Never lie about: citizenship, work auth, criminal history, education, clearance, licenses.
@@ -281,11 +300,18 @@ def build_prompt(job: dict, tailored_resume: str,
 
     full_name = personal["full_name"]
     name_slug = full_name.replace(" ", "_")
+    # Copy to current/ for reference, but worker dir is the accessible path
     dest_dir = config.APPLY_WORKER_DIR / "current"
     dest_dir.mkdir(parents=True, exist_ok=True)
     upload_pdf = dest_dir / f"{name_slug}_Resume.pdf"
     shutil.copy(str(src_pdf), str(upload_pdf))
-    pdf_path = str(upload_pdf)
+    # Worker-specific copy — Playwright MCP is sandboxed to the worker dir
+    worker_id = job.get("_worker_id", 0)
+    worker_dir = config.APPLY_WORKER_DIR / f"worker-{worker_id}"
+    worker_dir.mkdir(parents=True, exist_ok=True)
+    worker_pdf = worker_dir / f"{name_slug}_Resume.pdf"
+    shutil.copy(str(src_pdf), str(worker_pdf))
+    pdf_path = str(worker_pdf)
 
     cover_letter_text = cover_letter or ""
     cl_upload_path = ""
@@ -325,7 +351,7 @@ def build_prompt(job: dict, tailored_resume: str,
     blocked_sso = load_blocked_sso()
 
     preferred_name = personal.get("preferred_name", full_name.split()[0])
-    last_name = full_name.split()[-1] if " " in full_name else ""
+    last_name = personal.get("last_name", full_name.split()[-1] if " " in full_name else "")
     display_name = f"{preferred_name} {last_name}".strip()
 
     if dry_run:
@@ -334,6 +360,11 @@ def build_prompt(job: dict, tailored_resume: str,
         submit_instruction = "Before Submit: snapshot and verify EVERY field matches profile and resume — name, email, phone, location, work auth, resume uploaded. Fix anything wrong FIRST."
 
     prompt = f"""You are an autonomous job application agent. Submit this application.
+
+== TOOLS AVAILABLE (do NOT call ToolSearch — all tools are pre-loaded) ==
+- Browser: browser_navigate, browser_snapshot, browser_take_screenshot, browser_click, browser_type, browser_fill_form, browser_evaluate, browser_file_upload, browser_press_key, browser_wait_for, browser_scroll, browser_tabs, browser_run_code_unsafe
+- Email (for OTP/verification only): email:list_emails, email:get_email, email:search_emails
+Use these directly. NEVER call ToolSearch. NEVER call email:list_accounts — it is not needed and wastes a turn.
 
 == JOB ==
 URL: {job.get('application_url') or job['url']}
@@ -364,39 +395,48 @@ Cover Letter PDF: {cl_upload_path or 'N/A'}
 - SSO login (Google/Microsoft OAuth) -> RESULT:FAILED:sso_required
 - Payment info, bank details, SSN/SIN
 
-{location_check}
-
 {salary_section}
 
 {screening_section}
 
 == STEPS ==
-1. browser_navigate to job URL.
-2. browser_snapshot. Run CAPTCHA DETECT. Solve if found.
-3. LOCATION CHECK. Not eligible -> RESULT:FAILED:not_eligible_location and stop.
+1. Check job URL. If it starts with "/" (relative path, no domain) -> RESULT:FAILED:bad_url immediately. Do NOT guess domains.
+2. browser_navigate to job URL.
+3. browser_snapshot. Run CAPTCHA DETECT. Solve if found.
 4. Click Apply. If email-only: send_email subject "Application for {job['title']} — {display_name}", body=2-3 sentence pitch + contact, attach "{pdf_path}". Output RESULT:APPLIED.
    After clicking Apply: run CAPTCHA DETECT.
-5. Login wall?
-   5a. URL is {', '.join(blocked_sso)} or any SSO/OAuth -> RESULT:FAILED:sso_required.
-   5b. New tab/popup (browser_tabs list)? Switch to it. SSO URL -> RESULT:FAILED:sso_required.
-   5c. Regular login: {personal['email']} / {personal.get('password', '')}
-   5d. After Login click: run CAPTCHA DETECT.
-   5e. Login failed? Try sign up with same email and password.
-   5f. Email required? Wait 8s then search_emails for mail from the site's domain.
-       Use get_email to read the full body. Then:
-       - OTP/code field visible: extract the numeric code from the email, type it.
-       - Verification link (no code field): extract the link, browser_navigate to it, continue.
-       - Password reset email: extract reset link, navigate to it, set password to {personal.get('password', '')}, return to login, retry 5c.
-       - No email after 20s (search twice, 10s apart): RESULT:FAILED:login_issue
-   5g. Switch back to application tab if needed.
-   5h. All failed -> RESULT:FAILED:login_issue.
-6. Upload resume: delete existing first, browser_file_upload with PDF path. Always upload fresh.
-7. Cover letter field? Text -> paste. File -> upload PDF.
-8. Check ALL pre-filled fields. ATS parsers are wrong. Fix "Current Job Title" and everything else against profile.
-9. Answer screening questions per rules above.
-10. {submit_instruction}
-11. After submit: CAPTCHA DETECT. Check for new tabs. Snapshot to confirm "thank you" / "application received".
-12. Output RESULT.
+6. Login wall?
+   6a. URL is {', '.join(blocked_sso)} or any SSO/OAuth -> RESULT:FAILED:sso_required.
+   6b. New tab/popup (browser_tabs list)? Switch to it. SSO URL -> RESULT:FAILED:sso_required.
+   6c. Regular login: {personal['email']} / {personal.get('password', '')}
+   6d. After Login click: run CAPTCHA DETECT.
+   6e. Login failed (wrong password / "invalid credentials" / "email already registered")?
+       IMPORTANT: Do NOT invent alternative passwords or try variants. Do NOT create a new account with a different email.
+       - Look for "Forgot password", "Reset password", or "Trouble signing in" link and click it immediately.
+       - Enter {personal['email']} and submit the reset form.
+       - Wait 10s, then search_emails for a password reset email from the site's domain.
+       - Use get_email to get the reset link. Navigate to it. Set new password to {personal.get('password', '')}.
+       - Return to login, retry 6c with the new password.
+       - No "Forgot password" link AND no existing account: try sign up with {personal['email']} / {personal.get('password', '')}.
+       - Sign up fails (email taken / already registered): go back to forgot password flow above.
+   6f. Email verification/OTP required?
+       Do NOT call list_accounts. Go directly:
+       - Wait 8s, then call list_emails with limit=10 to get the 10 most recent emails.
+       - Find the one from the site's domain (match sender domain, not exact address).
+       - Call get_email on that message id to read the full body.
+       - OTP/code field visible: extract the numeric code, type it.
+       - Verification link (no code field): extract the URL, browser_navigate to it, continue.
+       - Nothing relevant in last 10 emails: wait 10s more, call list_emails again once.
+       - Still nothing: RESULT:FAILED:login_issue
+   6g. Switch back to application tab if needed.
+   6h. All failed -> RESULT:FAILED:login_issue.
+7. Upload resume: delete existing first, browser_file_upload with PDF path. Always upload fresh.
+8. Cover letter field? Text -> paste. File -> upload PDF.
+9. Check ALL pre-filled fields. ATS parsers are wrong. Fix "Current Job Title" and everything else against profile.
+10. Answer screening questions per rules above.
+11. {submit_instruction}
+12. After submit: CAPTCHA DETECT. Check for new tabs. Snapshot to confirm "thank you" / "application received".
+13. Output RESULT.
 
 == RESULT CODES ==
 RESULT:APPLIED | RESULT:EXPIRED | RESULT:CAPTCHA | RESULT:LOGIN_ISSUE
@@ -412,16 +452,45 @@ RESULT:FAILED:not_eligible_location | RESULT:FAILED:not_eligible_work_auth | RES
 == FORM TRICKS ==
 - New tab opened? browser_tabs list/select. Always check after login/apply/sign-in clicks.
 - Workday/Lever pre-fill page: click upload area, browser_file_upload, wait for parse, click Next.
-- Dropdown won't fill? Click to open, click the option.
+- Dropdowns — NEVER type verbatim and press Enter. Use this exact flow:
+  1. Click the dropdown/input to open it.
+  2. Type 2-3 characters of the target value to filter. browser_snapshot to see filtered results.
+  3. If matching options appear: click the closest one (fuzzy OK — "Job Board"="Online Job Board", "Decline"="Prefer not to say", "Not a Veteran"="I am not a protected veteran").
+  4. If no results after typing: clear the field (select-all + delete), then browser_snapshot to read ALL available options, then click the closest match.
+  5. Never leave a required dropdown empty. If nothing fits, pick the most neutral/generic option available.
 - Checkbox won't check? browser_click it directly.
 - Phone with country prefix: type digits only: {phone_digits}
+- Canadian postal codes: strip spaces before typing (M1P 4V4 -> M1P4V4). If it's a lookup dropdown: type the full 6 chars (M1P4V4) to filter first — if exact match appears, click it. If no exact match, clear and type just the FSA (first 3 chars, e.g. M1P) to get nearby options, then click the closest result.
+- "How Did You Hear About Us?" / "Source" / "How did you find this job?": open the dropdown, pick the closest option to "Online Job Board" (e.g. "Job Board", "Indeed", "LinkedIn", "Internet/Online"). Never leave it blank.
 - Date fields: {datetime.now().strftime('%m/%d/%Y')}
 - Validation errors? Take snapshot AND screenshot. Fix all, retry.
+- React/SPA forms (Ashby, Lever, Greenhouse): if fields show as empty on submit despite being typed, the framework didn't register the input. After typing, dispatch events via JS: browser_evaluate: (ref) => {{ const el = document.querySelector('input[name="..."]') || document.activeElement; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); }} then re-snapshot to confirm value is set.
 
 {captcha_section}
 
 == GIVE UP WHEN ==
 - Same page after 3 attempts -> RESULT:FAILED:stuck
+
+== VALIDATION ERRORS ==
+NEVER skip a field marked red or "Fields to fix: N" and proceed to Submit — the form will always block you.
+NEVER cancel an education/experience form you've opened mid-fill — finish it completely before closing.
+NEVER delete an education entry to avoid filling it — education is always required. Add it back if deleted.
+NEVER submit without a completed education entry.
+If an edit dialog won't open after 2 tries: browser_snapshot to get fresh element refs, then try clicking the pencil/edit/checkmark icon by ref. If still stuck after 3 attempts total, delete the entry and re-add it from scratch — but fill the new one completely.
+For date pickers / Month+Year dropdowns that won't respond to click or type, force-set via JS:
+browser_evaluate: () => {{
+  const selects = document.querySelectorAll('select');
+  selects.forEach(s => {{
+    const label = (s.getAttribute('aria-label') || s.id || '').toLowerCase();
+    if (label.includes('start') && label.includes('month')) {{ s.value = Array.from(s.options).find(o => o.text.includes('September') || o.text === '9' || o.value === '9')?.value || '9'; s.dispatchEvent(new Event('change', {{bubbles:true}})); }}
+    if (label.includes('start') && label.includes('year')) {{ s.value = '2025'; s.dispatchEvent(new Event('change', {{bubbles:true}})); }}
+    if ((label.includes('end') || label.includes('projected') || label.includes('completion') || label.includes('graduation')) && label.includes('month')) {{ s.value = Array.from(s.options).find(o => o.text.includes('April') || o.text === '4' || o.value === '4')?.value || '4'; s.dispatchEvent(new Event('change', {{bubbles:true}})); }}
+    if ((label.includes('end') || label.includes('projected') || label.includes('completion') || label.includes('graduation')) && label.includes('year')) {{ s.value = '2029'; s.dispatchEvent(new Event('change', {{bubbles:true}})); }}
+  }});
+  return 'done';
+}}
+Run this JS before trying manual clicks on date fields. Then snapshot to verify. Only fall back to manual clicks if JS had no effect.
+Graduation/completion = April 2029. Start = September 2025.
 - Job closed/expired -> RESULT:EXPIRED
 - Page broken/500 -> RESULT:FAILED:page_error"""
 
