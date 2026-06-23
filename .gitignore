@@ -4,8 +4,12 @@ profile.json
 resume.txt
 resume.pdf
 
-# Runtime data
+# Databases
 *.db
+*.db-shm
+*.db-wal
+
+# Runtime data
 logs/
 tailored_resumes/
 cover_letters/
@@ -23,6 +27,9 @@ searches.yaml
 
 # Generated MCP configs
 .mcp-apply-*.json
+
+# Claude project data
+.claude/
 
 # macOS
 .DS_Store
