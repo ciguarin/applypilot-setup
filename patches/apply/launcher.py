@@ -81,12 +81,16 @@ def _make_mcp_config(cdp_port: int) -> dict:
     email_addr = os.environ.get("ICLOUD_EMAIL", "")
     email_pass = os.environ.get("ICLOUD_APP_PASSWORD", "")
     if email_addr and email_pass:
+        imap_host = os.environ.get("ICLOUD_IMAP_HOST", "imap.mail.me.com")
+        smtp_host = os.environ.get("ICLOUD_SMTP_HOST", "smtp.mail.me.com")
         mcp["mcpServers"]["email"] = {
             "command": "npx",
             "args": ["-y", "@codefuturist/email-mcp"],
             "env": {
-                "MCP_EMAIL_ADDRESS": email_addr,
-                "MCP_EMAIL_PASSWORD": email_pass,
+                "MCP_EMAIL_ADDRESS":   email_addr,
+                "MCP_EMAIL_PASSWORD":  email_pass,
+                "MCP_EMAIL_IMAP_HOST": imap_host,
+                "MCP_EMAIL_SMTP_HOST": smtp_host,
                 "MCP_EMAIL_READ_ONLY": "true",
             },
         }
