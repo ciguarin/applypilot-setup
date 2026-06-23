@@ -25,7 +25,7 @@ An n8n workflow polls both repos on a 2-hour schedule, deduplicates against your
 
 The apply stage (`launcher.py` + `prompt.py`) is where most of the real work happened:
 
-- **Email MCP for OTP/verification** — upstream has no handling for sites that send a verification code or magic link before showing the application form. This adds an iCloud IMAP integration via `@codefuturist/email-mcp` so the agent can retrieve OTP codes and password reset links mid-session without human intervention.
+- **Email MCP for OTP/verification** — upstream has no handling for sites that send a verification code or magic link before showing the application form. This adds IMAP-based email access via `@codefuturist/email-mcp` so the agent can retrieve OTP codes and password reset links mid-session without human intervention. Works with any provider that supports IMAP — Gmail, iCloud Mail, Outlook, Fastmail, etc.
 
 - **Prompt rewrite** — the upstream agent prompt is verbose and general-purpose. This version is stripped down and made prescriptive: explicit dropdown handling (open → read all options → fuzzy match → click, never type verbatim), forgot-password flow before sign-up fallback, React/SPA input event dispatch for Ashby/Greenhouse forms that don't register `browser_type` events, and hard rules around education fields (never cancel mid-fill, never submit without one).
 
