@@ -363,7 +363,7 @@ def build_prompt(job: dict, tailored_resume: str,
 
 == TOOLS AVAILABLE (do NOT call ToolSearch — all tools are pre-loaded) ==
 - Browser: browser_navigate, browser_snapshot, browser_take_screenshot, browser_click, browser_type, browser_fill_form, browser_evaluate, browser_file_upload, browser_press_key, browser_wait_for, browser_scroll, browser_tabs, browser_run_code_unsafe
-- Email (for OTP/verification only): email:list_emails, email:get_email, email:search_emails
+- Email (for OTP/verification only): email:list_emails, email:get_email, email:search_emails, email:move_email
 Use these directly. NEVER call ToolSearch. NEVER call email:list_accounts — it is not needed and wastes a turn.
 
 == JOB ==
@@ -424,8 +424,10 @@ Cover Letter PDF: {cl_upload_path or 'N/A'}
        - Wait 8s, then call list_emails with limit=10 to get the 10 most recent emails.
        - Find the one from the site's domain (match sender domain, not exact address).
        - Call get_email on that message id to read the full body.
-       - OTP/code field visible: extract the numeric code, type it.
+       - OTP/code field visible: extract the numeric code, type it. Then archive:
+         move_email(account='default', emailId=<id>, sourceMailbox='INBOX', destinationMailbox='Archive')
        - Verification link (no code field): extract the URL, browser_navigate to it, continue.
+         Then archive: move_email(account='default', emailId=<id>, sourceMailbox='INBOX', destinationMailbox='Archive')
        - Nothing relevant in last 10 emails: wait 10s more, call list_emails again once.
        - Still nothing: RESULT:FAILED:login_issue
    6g. Switch back to application tab if needed.

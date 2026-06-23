@@ -15,6 +15,12 @@ cp "$SRC/scoring/pdf.py"        "$DST/scoring/pdf.py"         && echo "Patched: 
 cp "$SRC/cli.py"                "$DST/cli.py"                 && echo "Patched: cli.py"
 cp "$SRC/apply/prompt.py"       "$DST/apply/prompt.py"        && echo "Patched: apply/prompt.py"
 cp "$SRC/apply/launcher.py"    "$DST/apply/launcher.py"      && echo "Patched: apply/launcher.py"
+cp "$SRC/wizard/init.py"      "$DST/wizard/init.py"         && echo "Patched: wizard/init.py"
+
+
+# Re-install Python extras in case they were wiped by the upgrade
+uv pip install --python "$(uv tool dir)/applypilot/bin/python" --quiet pypdf
+echo "Patched: pypdf"
 
 echo ""
 echo "All patches applied to $DST"

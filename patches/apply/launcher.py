@@ -71,27 +71,29 @@ def _make_mcp_config(cdp_port: int) -> dict:
             "playwright": {
                 "command": "npx",
                 "args": [
-                    "@playwright/mcp@latest",
+                    "-y",
+                    "@playwright/mcp",
                     f"--cdp-endpoint=http://localhost:{cdp_port}",
                     f"--viewport-size={config.DEFAULTS['viewport']}",
                 ],
             },
         }
     }
-    email_addr = os.environ.get("ICLOUD_EMAIL", "")
-    email_pass = os.environ.get("ICLOUD_APP_PASSWORD", "")
+    email_addr = os.environ.get("EMAIL_ADDRESS", "")
+    email_pass = os.environ.get("EMAIL_PASSWORD", "")
     if email_addr and email_pass:
-        imap_host = os.environ.get("ICLOUD_IMAP_HOST", "imap.mail.me.com")
-        smtp_host = os.environ.get("ICLOUD_SMTP_HOST", "smtp.mail.me.com")
+        imap_host = os.environ.get("EMAIL_IMAP_HOST", "imap.mail.me.com")
+        smtp_host = os.environ.get("EMAIL_SMTP_HOST", "smtp.mail.me.com")
         mcp["mcpServers"]["email"] = {
             "command": "npx",
             "args": ["-y", "@codefuturist/email-mcp"],
             "env": {
-                "MCP_EMAIL_ADDRESS":   email_addr,
-                "MCP_EMAIL_PASSWORD":  email_pass,
-                "MCP_EMAIL_IMAP_HOST": imap_host,
-                "MCP_EMAIL_SMTP_HOST": smtp_host,
-                "MCP_EMAIL_READ_ONLY": "true",
+                "MCP_EMAIL_ADDRESS":      email_addr,
+                "MCP_EMAIL_PASSWORD":     email_pass,
+                "MCP_EMAIL_IMAP_HOST":    imap_host,
+                "MCP_EMAIL_SMTP_HOST":    smtp_host,
+                "MCP_EMAIL_ACCOUNT_NAME": "default",
+                "MCP_EMAIL_READ_ONLY":    "false",
             },
         }
     return mcp
@@ -344,7 +346,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         "--mcp-config", str(mcp_config_path),
         "--permission-mode", "bypassPermissions",
         "--no-session-persistence",
-        "--disallowedTools", "Bash,ToolSearch,mcp__email__list_accounts",
+        "--disallowedTools", "Bash,ToolSearch,mcp__email__list_accounts,mcp__email__send_email,mcp__email__delete_email,mcp__email__create_draft",
         "--output-format", "stream-json",
         "--verbose", "-",
     ]

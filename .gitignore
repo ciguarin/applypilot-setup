@@ -31,5 +31,18 @@ searches.yaml
 # Claude project data
 .claude/
 
+# Test credentials
+test/test.env
+test/resume.txt
+test/resume.pdf
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Testing
+test/
+
 # macOS
 .DS_Store
